@@ -12,6 +12,11 @@ let config = {
   TARGET_GUILD_NAME: process.env.TARGET_GUILD_NAME || 'Bernard server',
   USE_WEBHOOKS: true,
   AUTO_CREATE_MISSING_CHANNELS: true,
+  REMOVE_SOURCE_CONTACTS: true,
+  REPLACEMENTS: {
+    "Trading Mafia": "Bernard Community",
+    "@Trading Mafia": "@Bernard Support"
+  }
 };
 
 const configPath = path.join(__dirname, 'config.json');
@@ -24,7 +29,6 @@ if (fs.existsSync(configPath)) {
     }
   } catch (e) {}
 }
-
 
 const botClient = new BotClient({
   intents: [
@@ -54,6 +58,58 @@ function sanitizeName(str) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Text Replacement & Sanitization Engine
+ */
+function sanitizeText(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  let sanitized = text;
+
+  // 1. Custom Text Replacements from Config
+  if (config.REPLACEMENTS && typeof config.REPLACEMENTS === 'object') {
+    for (const [key, value] of Object.entries(config.REPLACEMENTS)) {
+      if (key) {
+        const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        sanitized = sanitized.replace(regex, value);
+      }
+    }
+  }
+
+  // 2. Remove Source Contact Links & Phone Numbers if enabled
+  if (config.REMOVE_SOURCE_CONTACTS) {
+    sanitized = sanitized.replace(/https?:\/\/wa\.me\/[0-9]+/gi, '');
+    sanitized = sanitized.replace(/\+44\s?[0-9\s]{9,12}/gi, '');
+  }
+
+  return sanitized;
+}
+
+/**
+ * Embed Sanitization
+ */
+function sanitizeEmbed(embed) {
+  if (!embed) return embed;
+  const e = { ...embed };
+
+  if (e.title) e.title = sanitizeText(e.title);
+  if (e.description) e.description = sanitizeText(e.description);
+
+  if (Array.isArray(e.fields)) {
+    e.fields = e.fields.map(f => ({
+      ...f,
+      name: sanitizeText(f.name),
+      value: sanitizeText(f.value)
+    }));
+  }
+
+  if (e.footer && e.footer.text) {
+    e.footer.text = sanitizeText(e.footer.text);
+  }
+
+  return e;
 }
 
 async function syncChannelMappings() {
@@ -173,7 +229,7 @@ async function forwardMessage(msg) {
 
     if (!targetChannel) return;
 
-    let content = msg.content || '';
+    let rawContent = msg.content || '';
 
     // Handle Replies
     if (msg.reference && msg.reference.messageId) {
@@ -181,10 +237,13 @@ async function forwardMessage(msg) {
         const refMsg = await msg.channel.messages.fetch(msg.reference.messageId);
         if (refMsg) {
           const replyText = refMsg.content ? refMsg.content.slice(0, 60) : '[Attachment/Embed]';
-          content = `> ↩️ *Replying to **${refMsg.author.username}**: "${replyText.replace(/\n/g, ' ')}..."*\n${content}`;
+          rawContent = `> ↩️ *Replying to **${refMsg.author.username}**: "${replyText.replace(/\n/g, ' ')}..."*\n${rawContent}`;
         }
       } catch (err) {}
     }
+
+    // Apply Text Filtering & Replacements
+    let content = sanitizeText(rawContent);
 
     // Handle Attachments
     const files = [];
@@ -197,8 +256,8 @@ async function forwardMessage(msg) {
       msg.stickers.forEach(s => files.push(s.url));
     }
 
-    // Handle Embeds
-    const embeds = msg.embeds ? msg.embeds.map(e => e.toJSON ? e.toJSON() : e) : [];
+    // Handle Embeds with Filtering
+    const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
 
     let sentSuccess = false;
 
@@ -219,7 +278,7 @@ async function forwardMessage(msg) {
     }
 
     if (!sentSuccess) {
-      const header = `📨 **[Trading Mafia | #${sourceChannel.name}]** **${msg.author.username}**:\n`;
+      const header = `📨 **[#${sourceChannel.name}]** **${msg.author.username}**:\n`;
       const fullText = content ? `${header}${content}` : header;
 
       await targetChannel.send({
@@ -229,7 +288,7 @@ async function forwardMessage(msg) {
       });
     }
 
-    console.log(`🚀 [Forwarded] [#${sourceChannel.name}] ➡️ [#${targetChannel.name}] (${msg.author.username})`);
+    console.log(`🚀 [Forwarded & Filtered] [#${sourceChannel.name}] ➡️ [#${targetChannel.name}] (${msg.author.username})`);
 
   } catch (err) {
     console.error(`❌ Forward Error:`, err.message);
@@ -327,17 +386,20 @@ async function handleAdminCommands(msg) {
       `• Source Server: ${sourceGuild ? sourceGuild.name : 'Not Found'}\n` +
       `• Target Server: ${targetGuild ? targetGuild.name : 'Not Found'}\n` +
       `• Mapped Channels: ${channelMap.size}\n` +
-      `• Webhooks Enabled: ${config.USE_WEBHOOKS ? 'Yes' : 'No'}`
+      `• Webhooks Enabled: ${config.USE_WEBHOOKS ? 'Yes' : 'No'}\n` +
+      `• Text Sanitization: ${config.REMOVE_SOURCE_CONTACTS ? 'Active' : 'Disabled'}`
     );
   }
 
   if (msg.content === '!test') {
-    await msg.reply('🧪 Forwarder connection test successful! The bot is active and ready.');
+    await msg.reply('🧪 Forwarder connection test successful! Text replacement filter engine is active.');
   }
 }
 
 // Login Both
-botClient.login(config.BOT_TOKEN).catch(e => console.error('❌ Bot Login Error:', e.message));
+if (config.BOT_TOKEN) {
+  botClient.login(config.BOT_TOKEN).catch(e => console.error('❌ Bot Login Error:', e.message));
+}
 if (selfClient) {
   selfClient.login(config.USER_TOKEN).catch(e => console.error('❌ User Account Login Error:', e.message));
 }
