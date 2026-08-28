@@ -309,6 +309,7 @@ async function forwardMessage(msg) {
             avatarURL: msg.author.displayAvatarURL ? msg.author.displayAvatarURL({ dynamic: true }) : msg.author.avatarURL,
             embeds: embeds.length > 0 ? embeds : undefined,
             files: files.length > 0 ? files : undefined,
+            allowedMentions: { parse: ['everyone', 'roles', 'users'] }
           });
           sentSuccess = true;
         } catch (whErr) {}
@@ -323,8 +324,10 @@ async function forwardMessage(msg) {
         content: fullText,
         embeds: embeds.length > 0 ? embeds : undefined,
         files: files.length > 0 ? files : undefined,
+        allowedMentions: { parse: ['everyone', 'roles', 'users'] }
       });
     }
+
 
     console.log(`🚀 [Forwarded & Filtered] [#${sourceChannel.name}] ➡️ [#${targetChannel.name}] (${msg.author.username})`);
 
