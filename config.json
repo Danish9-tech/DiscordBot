@@ -8,6 +8,8 @@
   "AUTO_CREATE_MISSING_CHANNELS": true,
   "REMOVE_SOURCE_CONTACTS": true,
   "ADD_PING_TAG": "@everyone",
+  "ENABLE_WHATSAPP": false,
+  "WHATSAPP_GROUP_ID": "",
   "REPLACEMENTS": {
   }
 }

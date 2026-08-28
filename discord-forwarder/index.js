@@ -44,6 +44,70 @@ if (config.USER_TOKEN && config.USER_TOKEN.trim() !== '') {
   selfClient = new SelfClient({ checkUpdate: false });
 }
 
+let waSock = null;
+let waReady = false;
+
+async function initWhatsApp() {
+  if (!config.ENABLE_WHATSAPP) return;
+
+  try {
+    const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+    const qrcode = require('qrcode-terminal');
+
+    const authDir = path.join(__dirname, 'whatsapp_auth');
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+
+    waSock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
+    });
+
+    waSock.ev.on('creds.update', saveCreds);
+
+    waSock.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      if (qr) {
+        console.log('\n===========================================');
+        console.log('📱 SCAN WHATSAPP QR CODE BELOW WITH YOUR PHONE:');
+        console.log('===========================================');
+        qrcode.generate(qr, { small: true });
+        console.log('===========================================\n');
+      }
+
+      if (connection === 'close') {
+        waReady = false;
+        const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
+        console.log('📱 WhatsApp Connection Closed. Reconnecting:', shouldReconnect);
+        if (shouldReconnect) {
+          setTimeout(initWhatsApp, 5000);
+        }
+      } else if (connection === 'open') {
+        waReady = true;
+        console.log('===========================================');
+        console.log('🟢 WhatsApp Engine Successfully Connected!');
+        console.log('===========================================');
+
+        waSock.groupFetchAllParticipating().then(groups => {
+          console.log('\n📋 Your Available WhatsApp Groups:');
+          Object.values(groups).forEach(g => {
+            console.log(`  🔹 Group Name: "${g.subject}" | ID: "${g.id}"`);
+          });
+          if (config.WHATSAPP_GROUP_ID) {
+            console.log(`\n🎯 WhatsApp Signals Target Group ID: "${config.WHATSAPP_GROUP_ID}"\n`);
+          } else {
+            console.log('\n⚠️ Set "WHATSAPP_GROUP_ID" in config.json with one of the Group IDs above!\n');
+          }
+        }).catch(() => {});
+      }
+    });
+  } catch (err) {
+    console.error('❌ Failed to initialize WhatsApp:', err.message);
+  }
+}
+
+initWhatsApp();
+
+
 // Channel Mapping: sourceChannelId -> targetChannel Object
 const channelMap = new Map();
 const webhookMap = new Map();
@@ -338,10 +402,35 @@ async function forwardMessage(msg) {
 
     console.log(`🚀 [Forwarded & Filtered] [#${sourceChannel.name}] ➡️ [#${targetChannel.name}] (${msg.author.username})`);
 
+    // 📱 Forward to WhatsApp Group if enabled
+    if (config.ENABLE_WHATSAPP && waReady && waSock && config.WHATSAPP_GROUP_ID) {
+      try {
+        const waHeader = `📌 *[#${sourceChannel.name.toUpperCase()}]*\n\n`;
+        let waText = content ? `${waHeader}${content}` : waHeader;
+        waText = waText.replace(/@everyone/g, '').replace(/@here/g, '').trim();
+
+        if (files.length > 0) {
+          for (const fileUrl of files) {
+            if (fileUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i)) {
+              await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { image: { url: fileUrl }, caption: waText });
+            } else {
+              await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { text: waText });
+            }
+          }
+        } else {
+          await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { text: waText });
+        }
+        console.log(`📱 [WhatsApp Forwarded] [#${sourceChannel.name}] ➡️ WhatsApp Group`);
+      } catch (waErr) {
+        console.error(`❌ WhatsApp Forward Error:`, waErr.message);
+      }
+    }
+
   } catch (err) {
     console.error(`❌ Forward Error:`, err.message);
   }
 }
+
 
 // Bot Client Startup
 botClient.once('clientReady', async () => {
