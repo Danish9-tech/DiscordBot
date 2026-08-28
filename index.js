@@ -397,9 +397,13 @@ async function handleAdminCommands(msg) {
 }
 
 // Login Both
-if (config.BOT_TOKEN) {
-  botClient.login(config.BOT_TOKEN).catch(e => console.error('❌ Bot Login Error:', e.message));
+const cleanBotToken = (config.BOT_TOKEN || '').trim().replace(/^["']|["']$/g, '');
+const cleanUserToken = (config.USER_TOKEN || '').trim().replace(/^["']|["']$/g, '');
+
+if (cleanBotToken) {
+  botClient.login(cleanBotToken).catch(e => console.error('❌ Bot Login Error:', e.message));
 }
-if (selfClient) {
-  selfClient.login(config.USER_TOKEN).catch(e => console.error('❌ User Account Login Error:', e.message));
+if (selfClient && cleanUserToken) {
+  selfClient.login(cleanUserToken).catch(e => console.error('❌ User Account Login Error:', e.message));
 }
+
