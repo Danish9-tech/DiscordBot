@@ -347,6 +347,17 @@ async function forwardMessage(msg) {
     // Apply Text Filtering & Replacements
     let content = sanitizeText(rawContent);
 
+    // Handle Attachments
+    const files = [];
+    if (msg.attachments && msg.attachments.size > 0) {
+      msg.attachments.forEach(att => files.push(att.url));
+    }
+
+    // Handle Stickers
+    if (msg.stickers && msg.stickers.size > 0) {
+      msg.stickers.forEach(s => files.push(s.url));
+    }
+
     // 📱 Forward to WhatsApp Group if enabled (Independent of Discord Target Channel)
     if (config.ENABLE_WHATSAPP && waReady && waSock && config.WHATSAPP_GROUP_ID) {
       try {
@@ -378,17 +389,6 @@ async function forwardMessage(msg) {
       }
     }
 
-
-    // Handle Attachments
-    const files = [];
-    if (msg.attachments && msg.attachments.size > 0) {
-      msg.attachments.forEach(att => files.push(att.url));
-    }
-
-    // Handle Stickers
-    if (msg.stickers && msg.stickers.size > 0) {
-      msg.stickers.forEach(s => files.push(s.url));
-    }
 
     // Handle Embeds with Filtering
     const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
