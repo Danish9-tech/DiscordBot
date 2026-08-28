@@ -337,7 +337,14 @@ if (selfClient) {
     console.log(`👤 User Account Connected: ${selfClient.user.tag}`);
     console.log(`===========================================`);
 
-    sourceGuild = selfClient.guilds.cache.find(g => g.name.toLowerCase().includes(config.SOURCE_GUILD_NAME.toLowerCase()));
+    const joinedGuilds = Array.from(selfClient.guilds.cache.values());
+    console.log(`📋 User account is in ${joinedGuilds.length} servers:`, joinedGuilds.map(g => `"${g.name}" (${g.id})`).join(', '));
+
+    sourceGuild = (config.SOURCE_GUILD_ID ? selfClient.guilds.cache.get(config.SOURCE_GUILD_ID) : null) ||
+                  selfClient.guilds.cache.find(g => 
+                    g.name.toLowerCase().includes(config.SOURCE_GUILD_NAME.toLowerCase()) ||
+                    config.SOURCE_GUILD_NAME.toLowerCase().includes(g.name.toLowerCase())
+                  );
 
     if (!sourceGuild) {
       console.error(`❌ User account "${selfClient.user.tag}" is not a member of "${config.SOURCE_GUILD_NAME}" server!`);
@@ -356,6 +363,7 @@ if (selfClient) {
     }
   });
 }
+
 
 /**
  * Handle Admin Commands in Target Guild (Bernard Server)
