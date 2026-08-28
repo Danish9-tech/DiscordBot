@@ -176,6 +176,42 @@ function findTargetChannel(sourceChan, targetChannelsCollection) {
   return null;
 }
 
+async function autoCreateTargetChannel(sourceChan) {
+  if (!targetGuild || !config.AUTO_CREATE_MISSING_CHANNELS) return null;
+
+  try {
+    let parentCategory = null;
+
+    if (sourceChan.parent) {
+      const catClean = sanitizeName(sourceChan.parent.name);
+      const existingCats = targetGuild.channels.cache.filter(c => (c.type === 'GUILD_CATEGORY' || c.type === 4));
+      parentCategory = existingCats.find(c => sanitizeName(c.name) === catClean);
+
+      if (!parentCategory) {
+        parentCategory = await targetGuild.channels.create({
+          name: sourceChan.parent.name,
+          type: 4, // GUILD_CATEGORY
+        });
+        console.log(`📁 Auto-created category "${parentCategory.name}" in Bernard server`);
+      }
+    }
+
+    const newChan = await targetGuild.channels.create({
+      name: sourceChan.name,
+      type: 0, // GUILD_TEXT
+      parent: parentCategory ? parentCategory.id : undefined,
+      topic: sourceChan.topic || undefined
+    });
+
+    console.log(`✨ Auto-created new channel #${newChan.name} in Bernard server`);
+    channelMap.set(sourceChan.id, newChan);
+    return newChan;
+  } catch (err) {
+    console.error(`❌ Auto-create channel error for #${sourceChan.name}:`, err.message);
+    return null;
+  }
+}
+
 async function getWebhook(targetChannel) {
   if (webhookMap.has(targetChannel.id)) {
     return webhookMap.get(targetChannel.id);
@@ -224,6 +260,8 @@ async function forwardMessage(msg) {
 
       if (targetChannel) {
         channelMap.set(sourceChannel.id, targetChannel);
+      } else if (config.AUTO_CREATE_MISSING_CHANNELS) {
+        targetChannel = await autoCreateTargetChannel(sourceChannel);
       }
     }
 
@@ -362,7 +400,15 @@ if (selfClient) {
       await forwardMessage(msg);
     }
   });
+
+  selfClient.on('channelCreate', async (chan) => {
+    if (chan.guild && sourceGuild && chan.guild.id === sourceGuild.id) {
+      console.log(`🆕 New channel detected in Trading Mafia: #${chan.name}`);
+      await autoCreateTargetChannel(chan);
+    }
+  });
 }
+
 
 
 /**
