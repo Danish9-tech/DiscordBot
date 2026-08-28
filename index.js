@@ -283,6 +283,13 @@ async function forwardMessage(msg) {
     // Apply Text Filtering & Replacements
     let content = sanitizeText(rawContent);
 
+    if (config.ADD_PING_TAG && typeof config.ADD_PING_TAG === 'string' && config.ADD_PING_TAG.trim()) {
+      const pingStr = config.ADD_PING_TAG.trim();
+      if (!content.includes(pingStr)) {
+        content = content ? `${content}\n${pingStr}` : pingStr;
+      }
+    }
+
     // Handle Attachments
     const files = [];
     if (msg.attachments && msg.attachments.size > 0) {
