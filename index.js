@@ -347,12 +347,37 @@ async function forwardMessage(msg) {
     // Apply Text Filtering & Replacements
     let content = sanitizeText(rawContent);
 
+    // 📱 Forward to WhatsApp Group if enabled (Independent of Discord Target Channel)
+    if (config.ENABLE_WHATSAPP && waReady && waSock && config.WHATSAPP_GROUP_ID) {
+      try {
+        const waHeader = `📌 *[#${sourceChannel.name.toUpperCase()}]*\n\n`;
+        let waText = content ? `${waHeader}${content}` : waHeader;
+        waText = waText.replace(/@everyone/g, '').replace(/@here/g, '').trim();
+
+        if (files.length > 0) {
+          for (const fileUrl of files) {
+            if (fileUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i)) {
+              await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { image: { url: fileUrl }, caption: waText });
+            } else {
+              await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { text: waText });
+            }
+          }
+        } else {
+          await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { text: waText });
+        }
+        console.log(`📱 [WhatsApp Forwarded] [#${sourceChannel.name}] ➡️ WhatsApp Group (${msg.author.username})`);
+      } catch (waErr) {
+        console.error(`❌ WhatsApp Forward Error:`, waErr.message);
+      }
+    }
+
     if (config.ADD_PING_TAG && typeof config.ADD_PING_TAG === 'string' && config.ADD_PING_TAG.trim()) {
       const pingStr = config.ADD_PING_TAG.trim();
       if (!content.includes(pingStr)) {
         content = content ? `${content}\n${pingStr}` : pingStr;
       }
     }
+
 
     // Handle Attachments
     const files = [];
@@ -402,34 +427,11 @@ async function forwardMessage(msg) {
 
     console.log(`🚀 [Forwarded & Filtered] [#${sourceChannel.name}] ➡️ [#${targetChannel.name}] (${msg.author.username})`);
 
-    // 📱 Forward to WhatsApp Group if enabled
-    if (config.ENABLE_WHATSAPP && waReady && waSock && config.WHATSAPP_GROUP_ID) {
-      try {
-        const waHeader = `📌 *[#${sourceChannel.name.toUpperCase()}]*\n\n`;
-        let waText = content ? `${waHeader}${content}` : waHeader;
-        waText = waText.replace(/@everyone/g, '').replace(/@here/g, '').trim();
-
-        if (files.length > 0) {
-          for (const fileUrl of files) {
-            if (fileUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i)) {
-              await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { image: { url: fileUrl }, caption: waText });
-            } else {
-              await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { text: waText });
-            }
-          }
-        } else {
-          await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { text: waText });
-        }
-        console.log(`📱 [WhatsApp Forwarded] [#${sourceChannel.name}] ➡️ WhatsApp Group`);
-      } catch (waErr) {
-        console.error(`❌ WhatsApp Forward Error:`, waErr.message);
-      }
-    }
-
   } catch (err) {
     console.error(`❌ Forward Error:`, err.message);
   }
 }
+
 
 
 // Bot Client Startup
