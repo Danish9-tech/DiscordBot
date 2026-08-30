@@ -200,7 +200,20 @@ async function syncChannelMappings() {
   let mappedCount = 0;
 
   for (const [sourceId, sourceChan] of textSource) {
-    const matchedTarget = findTargetChannel(sourceChan, textTarget);
+    const sNameClean = sanitizeName(sourceChan.name);
+
+    // Skip closed tickets or ticket creation channels from auto-creation
+    if (sNameClean.startsWith('ticket-') || sNameClean.startsWith('closed-')) {
+      console.log(`  ⏩ Skipped Ticket Channel: [#${sourceChan.name}]`);
+      continue;
+    }
+
+    let matchedTarget = findTargetChannel(sourceChan, textTarget);
+
+    if (!matchedTarget && config.AUTO_CREATE_MISSING_CHANNELS) {
+      matchedTarget = await autoCreateTargetChannel(sourceChan);
+    }
+
     if (matchedTarget) {
       channelMap.set(sourceId, matchedTarget);
       mappedCount++;
@@ -212,6 +225,7 @@ async function syncChannelMappings() {
 
   console.log(`✨ Sync Complete! Mapped ${mappedCount}/${textSource.size} channels.\n`);
 }
+
 
 function findTargetChannel(sourceChan, targetChannelsCollection) {
   const sourceClean = sanitizeName(sourceChan.name);
@@ -248,7 +262,13 @@ async function autoCreateTargetChannel(sourceChan) {
 
     if (sourceChan.parent) {
       const catClean = sanitizeName(sourceChan.parent.name);
-      const existingCats = targetGuild.channels.cache.filter(c => (c.type === 'GUILD_CATEGORY' || c.type === 4));
+      let tChans;
+      try {
+        tChans = await targetGuild.channels.fetch();
+      } catch(e) {
+        tChans = targetGuild.channels.cache;
+      }
+      const existingCats = tChans.filter(c => c && (c.type === 'GUILD_CATEGORY' || c.type === 4));
       parentCategory = existingCats.find(c => sanitizeName(c.name) === catClean);
 
       if (!parentCategory) {
@@ -259,6 +279,7 @@ async function autoCreateTargetChannel(sourceChan) {
         console.log(`📁 Auto-created category "${parentCategory.name}" in Bernard server`);
       }
     }
+
 
     const newChan = await targetGuild.channels.create({
       name: sourceChan.name,
