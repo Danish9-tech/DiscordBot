@@ -10,6 +10,21 @@
   "ADD_PING_TAG": "@everyone",
   "ENABLE_WHATSAPP": false,
   "WHATSAPP_GROUP_ID": "",
+  "IGNORE_CHANNELS": [
+    "create-ticket",
+    "start-here",
+    "announcements",
+    "rules-and-guidelines",
+    "crypto-premium-plans",
+    "forex-premium-plans",
+    "how-to-join-premium",
+    "crypto-community-reviews",
+    "crypto-profits-showcase",
+    "forex-community-reviews",
+    "forex-profits-showcase",
+    "tips-and-tricks"
+  ],
   "REPLACEMENTS": {
+
   }
 }

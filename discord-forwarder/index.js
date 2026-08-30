@@ -310,7 +310,19 @@ async function forwardMessage(msg) {
 
   try {
     const sourceChannel = msg.channel;
+    const sourceNameClean = sanitizeName(sourceChannel.name);
+
+    // Ignore channels listed in IGNORE_CHANNELS
+    if (Array.isArray(config.IGNORE_CHANNELS) && config.IGNORE_CHANNELS.length > 0) {
+      const isIgnored = config.IGNORE_CHANNELS.some(ignored => {
+        const ignoredClean = sanitizeName(ignored);
+        return sourceNameClean.includes(ignoredClean) || ignoredClean.includes(sourceNameClean);
+      });
+      if (isIgnored) return;
+    }
+
     let targetChannel = channelMap.get(sourceChannel.id);
+
 
     if (!targetChannel && targetGuild) {
       let targetChannels;
