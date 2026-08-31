@@ -132,7 +132,13 @@ function sanitizeText(text) {
 
   let sanitized = text;
 
-  // 1. Custom Text Replacements from Config
+  // 1. Strict Brand Replacements (Trading Mafia -> Bernard Server)
+  sanitized = sanitized.replace(/realtradingmafia/gi, 'Bernard Server');
+  sanitized = sanitized.replace(/tradingmafia/gi, 'Bernard Server');
+  sanitized = sanitized.replace(/trading mafia/gi, 'Bernard Server');
+  sanitized = sanitized.replace(/@Trading Mafia/gi, '@Bernard Support');
+
+  // 2. Custom Text Replacements from Config
   if (config.REPLACEMENTS && typeof config.REPLACEMENTS === 'object') {
     for (const [key, value] of Object.entries(config.REPLACEMENTS)) {
       if (key) {
@@ -142,7 +148,7 @@ function sanitizeText(text) {
     }
   }
 
-  // 2. Remove Source Contact Links & Phone Numbers if enabled
+  // 3. Remove Source Contact Links & Phone Numbers if enabled
   if (config.REMOVE_SOURCE_CONTACTS) {
     sanitized = sanitized.replace(/https?:\/\/wa\.me\/[0-9]+/gi, '');
     sanitized = sanitized.replace(/\+44\s?[0-9\s]{9,12}/gi, '');
@@ -150,6 +156,7 @@ function sanitizeText(text) {
 
   return sanitized;
 }
+
 
 /**
  * Embed Sanitization
@@ -455,8 +462,11 @@ async function forwardMessage(msg, options = {}) {
 
     if (!sentSuccess) {
       try {
-        const header = `📨 **[#${sourceChannel.name}]** **${msg.author.username}**:\n`;
+        const rawAuthor = msg.author ? msg.author.username : 'Bernard Server';
+        const cleanAuthor = sanitizeText(rawAuthor);
+        const header = `📨 **[#${targetChannel.name}]** **${cleanAuthor}**:\n`;
         const fullText = content ? `${header}${content}` : header;
+
 
         let chanToSend = targetChannel;
         if (botClient) {
@@ -798,8 +808,11 @@ async function forwardHistoryMessage(msg, targetChan) {
 
     const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
 
-    const header = `📨 **[${msg.author ? msg.author.username : 'Course Note'}]** (${new Date(msg.createdTimestamp).toLocaleDateString()}):\n`;
+    const rawAuthor = msg.author ? msg.author.username : 'Bernard Server';
+    const cleanAuthor = sanitizeText(rawAuthor);
+    const header = `📨 **[${cleanAuthor}]** (${new Date(msg.createdTimestamp).toLocaleDateString()}):\n`;
     let fullText = content ? `${header}${content}` : header;
+
 
     let chanToSend = targetChan;
     if (botClient) {
