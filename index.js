@@ -560,10 +560,20 @@ if (selfClient) {
 
   selfClient.on('messageCreate', async (msg) => {
     if (!msg.guild) return;
+
+    // Handle Admin commands sent in Bernard Server via User Account as well
+    if (targetGuild && msg.guildId === targetGuild.id) {
+      if (msg.content.startsWith('!')) {
+        await handleAdminCommands(msg);
+        return;
+      }
+    }
+
     if (sourceGuild && msg.guildId === sourceGuild.id) {
       await forwardMessage(msg);
     }
   });
+
 
   selfClient.on('channelCreate', async (chan) => {
     if (chan.guild && sourceGuild && chan.guild.id === sourceGuild.id) {
@@ -629,7 +639,11 @@ async function handleAdminCommands(msg) {
 }
 
 async function copyCourseChannels(statusMsg) {
-  if (!sourceGuild || !targetGuild) return;
+  if (!targetGuild) {
+    console.error('❌ Target Guild (Bernard Server) not ready.');
+    if (statusMsg) await statusMsg.reply('❌ Target Guild (Bernard Server) not ready.');
+    return;
+  }
 
   const targetCourseNames = [
     'waqar-zaka-basic-course',
@@ -639,26 +653,41 @@ async function copyCourseChannels(statusMsg) {
     'chuff-gang-lectures'
   ];
 
+  let sGuild = sourceGuild;
+  if (!sGuild && selfClient) {
+    sGuild = Array.from(selfClient.guilds.cache.values()).find(g => 
+      g.name.toLowerCase().includes(config.SOURCE_GUILD_NAME.toLowerCase())
+    );
+  }
+
+  if (!sGuild) {
+    console.error(`❌ Source server "${config.SOURCE_GUILD_NAME}" not found.`);
+    if (statusMsg) await statusMsg.reply(`❌ Source server "${config.SOURCE_GUILD_NAME}" not found.`);
+    return;
+  }
+
   let sourceChannels;
   try {
-    sourceChannels = await sourceGuild.channels.fetch();
+    sourceChannels = await sGuild.channels.fetch();
   } catch (e) {
-    sourceChannels = sourceGuild.channels.cache;
+    sourceChannels = sGuild.channels.cache;
   }
 
   for (const name of targetCourseNames) {
     const cleanSearchName = sanitizeName(name);
     const sourceChan = sourceChannels.find(c => c && sanitizeName(c.name) === cleanSearchName);
-    const targetChan = channelMap.get(sourceChan ? sourceChan.id : '');
+    const targetChan = channelMap.get(sourceChan ? sourceChan.id : '') || 
+                       targetGuild.channels.cache.find(c => sanitizeName(c.name) === cleanSearchName);
 
     if (!sourceChan || !targetChan) {
       console.log(`⚠️ Skipping course channel "${name}": Source or Target channel not found.`);
+      if (statusMsg) await statusMsg.channel.send(`⚠️ Skipping course channel "${name}": Not found in source or target server.`);
       continue;
     }
 
     if (statusMsg) await statusMsg.channel.send(`📥 Copying complete history for **#${sourceChan.name}**...`);
     await fetchAndForwardAllHistory(sourceChan, targetChan);
-    if (statusMsg) await statusMsg.channel.send(`✅ Completed **#${sourceChan.name}**!`);
+    if (statusMsg) await statusMsg.channel.send(`✅ Completed copying history for **#${sourceChan.name}**!`);
   }
 
   if (statusMsg) await statusMsg.channel.send(`🎉 **All course channels have been fully copied into Bernard server!**`);
@@ -669,13 +698,23 @@ async function fetchAndForwardAllHistory(sourceChan, targetChan) {
   let allMessages = [];
   console.log(`📥 Fetching full history from Trading Mafia #${sourceChan.name}...`);
 
+  // Ensure source channel object is fetched via selfClient if possible
+  let srcChannelObj = sourceChan;
+  if (selfClient) {
+    try {
+      srcChannelObj = await selfClient.channels.fetch(sourceChan.id);
+    } catch (e) {
+      srcChannelObj = selfClient.channels.cache.get(sourceChan.id) || sourceChan;
+    }
+  }
+
   while (true) {
     const options = { limit: 100 };
     if (lastId) options.before = lastId;
 
     let fetched;
     try {
-      fetched = await sourceChan.messages.fetch(options);
+      fetched = await srcChannelObj.messages.fetch(options);
     } catch (err) {
       console.error(`❌ Fetch history error for #${sourceChan.name}:`, err.message);
       break;
@@ -710,6 +749,7 @@ async function fetchAndForwardAllHistory(sourceChan, targetChan) {
 
   console.log(`✨ Completed forwarding for #${sourceChan.name}!`);
 }
+
 
 
 async function cleanTicketChannels() {
