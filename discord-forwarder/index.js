@@ -176,6 +176,29 @@ function sanitizeEmbed(embed) {
   return e;
 }
 
+function isTicketChannel(chan) {
+  if (!chan || !chan.name) return false;
+  const name = chan.name.toLowerCase().trim();
+
+  // Allow the single create-ticket panel in Bernard server
+  if (name === 'create-ticket') return false;
+
+  // Match individual ticket channels (e.g. ticket-2330, closed-2416, ticket2330, closed2416)
+  if (/^(ticket|closed)[-_]?\d+/i.test(name)) return true;
+  if (name.startsWith('ticket-') || name.startsWith('closed-')) return true;
+
+  // Match category names
+  if (name.includes('closed tickets') || name.includes('open tickets')) return true;
+
+  // Check parent category
+  if (chan.parent) {
+    const pName = chan.parent.name.toLowerCase().trim();
+    if (pName.includes('closed tickets') || pName.includes('open tickets')) return true;
+  }
+
+  return false;
+}
+
 async function syncChannelMappings() {
   if (!sourceGuild || !targetGuild) return;
 
@@ -200,10 +223,8 @@ async function syncChannelMappings() {
   let mappedCount = 0;
 
   for (const [sourceId, sourceChan] of textSource) {
-    const sNameClean = sanitizeName(sourceChan.name);
-
-    // Skip closed tickets or ticket creation channels from auto-creation
-    if (sNameClean.startsWith('ticket-') || sNameClean.startsWith('closed-')) {
+    // Skip ticket channels and categories completely
+    if (isTicketChannel(sourceChan)) {
       console.log(`  ⏩ Skipped Ticket Channel: [#${sourceChan.name}]`);
       continue;
     }
@@ -225,6 +246,7 @@ async function syncChannelMappings() {
 
   console.log(`✨ Sync Complete! Mapped ${mappedCount}/${textSource.size} channels.\n`);
 }
+
 
 
 function findTargetChannel(sourceChan, targetChannelsCollection) {
@@ -257,12 +279,12 @@ function findTargetChannel(sourceChan, targetChannelsCollection) {
 async function autoCreateTargetChannel(sourceChan) {
   if (!targetGuild || !config.AUTO_CREATE_MISSING_CHANNELS) return null;
 
-  const sNameClean = sanitizeName(sourceChan.name);
-  if (sNameClean.startsWith('ticket-') || sNameClean.startsWith('closed-')) {
+  if (isTicketChannel(sourceChan)) {
     return null;
   }
 
   try {
+
 
     let parentCategory = null;
 
@@ -605,23 +627,38 @@ async function cleanTicketChannels() {
   if (!targetGuild) return;
   try {
     const channels = await targetGuild.channels.fetch();
-    const ticketChans = channels.filter(c => c && (c.name.startsWith('ticket-') || c.name.startsWith('closed-')));
-    if (ticketChans.size > 0) {
-      console.log(`🧹 Found ${ticketChans.size} old ticket channels in Bernard server. Cleaning up...`);
+
+    const ticketChans = channels.filter(c => c && (c.type === 'GUILD_TEXT' || c.isTextBased?.()) && isTicketChannel(c));
+    const ticketCats = channels.filter(c => c && (c.type === 'GUILD_CATEGORY' || c.type === 4) && isTicketChannel(c));
+
+    if (ticketChans.size > 0 || ticketCats.size > 0) {
+      console.log(`🧹 Found ${ticketChans.size} ticket channels and ${ticketCats.size} ticket categories in Bernard server. Deleting...`);
+
       for (const [id, chan] of ticketChans) {
         try {
-          await chan.delete('Cleanup ticket channels');
-          console.log(`  🗑️ Deleted old ticket channel: #${chan.name}`);
+          await chan.delete('Cleanup ticket channel');
+          console.log(`  🗑️ Deleted ticket channel: #${chan.name}`);
         } catch (e) {
           console.error(`  ❌ Failed to delete #${chan.name}:`, e.message);
         }
       }
+
+      for (const [id, cat] of ticketCats) {
+        try {
+          await cat.delete('Cleanup ticket category');
+          console.log(`  🗑️ Deleted ticket category: "${cat.name}"`);
+        } catch (e) {
+          console.error(`  ❌ Failed to delete category "${cat.name}":`, e.message);
+        }
+      }
+
       console.log(`✨ Ticket cleanup complete!\n`);
     }
   } catch (err) {
     console.error('❌ Ticket channel cleanup error:', err.message);
   }
 }
+
 
 
 // Login Both
