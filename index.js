@@ -670,6 +670,63 @@ async function handleAdminCommands(msg) {
     await msg.reply('✅ Old ticket channels cleaned up successfully!');
   }
 
+  if (command.startsWith('!copychannel')) {
+    const args = msg.content.trim().split(/\s+/).slice(1).join(' ');
+    if (!args) {
+      await msg.reply('⚠️ Please specify a channel name! Example: `!copychannel forex-guide-room`');
+      return;
+    }
+
+    const searchName = sanitizeName(args);
+    let sGuild = sourceGuild;
+    if (!sGuild && selfClient) {
+      sGuild = Array.from(selfClient.guilds.cache.values()).find(g => 
+        g.name.toLowerCase().includes(config.SOURCE_GUILD_NAME.toLowerCase())
+      );
+    }
+
+    if (!sGuild) {
+      await msg.reply(`❌ Source server "${config.SOURCE_GUILD_NAME}" not found.`);
+      return;
+    }
+
+    let sourceChannels;
+    try {
+      sourceChannels = await sGuild.channels.fetch();
+    } catch (e) {
+      sourceChannels = sGuild.channels.cache;
+    }
+
+    const sourceChan = sourceChannels.find(c => c && sanitizeName(c.name) === searchName);
+    if (!sourceChan) {
+      await msg.reply(`❌ Channel **#${args}** not found in source server.`);
+      return;
+    }
+
+    let targetChan = channelMap.get(sourceChan.id);
+    if (!targetChan && targetGuild) {
+      let targetChannels;
+      try {
+        targetChannels = await targetGuild.channels.fetch();
+      } catch (e) {
+        targetChannels = targetGuild.channels.cache;
+      }
+      targetChan = findTargetChannel(sourceChan, targetChannels);
+      if (!targetChan && config.AUTO_CREATE_MISSING_CHANNELS) {
+        targetChan = await autoCreateTargetChannel(sourceChan);
+      }
+    }
+
+    if (!targetChan) {
+      await msg.reply(`❌ Target channel for **#${sourceChan.name}** not found in Trade Nura.`);
+      return;
+    }
+
+    await msg.reply(`📥 Copying complete history for **#${sourceChan.name}** ➡️ **#${targetChan.name}**...`);
+    await fetchAndForwardAllHistory(sourceChan, targetChan);
+    await msg.reply(`✅ Finished copying history for **#${sourceChan.name}**!`);
+  }
+
   if (command === '!copycourses') {
     await msg.reply('📚 Starting full historical copy for all Course channels... This may take a few minutes!');
     await copyCourseChannels(msg);
@@ -684,6 +741,7 @@ async function handleAdminCommands(msg) {
     await msg.reply('🧪 Forwarder connection test successful! Text replacement filter engine is active.');
   }
 }
+
 
 async function hideCategoriesFromEveryone(statusMsg) {
   let guild = targetGuild;
