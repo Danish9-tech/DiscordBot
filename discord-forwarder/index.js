@@ -787,23 +787,19 @@ async function forwardHistoryMessage(msg, targetChan) {
     let rawContent = msg.content || '';
     let content = sanitizeText(rawContent);
 
-    // Collect attachment & sticker URLs
-    const fileUrls = [];
+    // Collect attachment & sticker URLs (pictures, videos, PDFs, etc.)
+    const files = [];
     if (msg.attachments && msg.attachments.size > 0) {
-      msg.attachments.forEach(att => fileUrls.push(att.url));
+      msg.attachments.forEach(att => files.push(att.url));
     }
     if (msg.stickers && msg.stickers.size > 0) {
-      msg.stickers.forEach(s => fileUrls.push(s.url));
+      msg.stickers.forEach(s => files.push(s.url));
     }
 
     const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
 
     const header = `📨 **[${msg.author ? msg.author.username : 'Course Note'}]** (${new Date(msg.createdTimestamp).toLocaleDateString()}):\n`;
     let fullText = content ? `${header}${content}` : header;
-
-    if (fileUrls.length > 0) {
-      fullText += '\n' + fileUrls.join('\n');
-    }
 
     let chanToSend = targetChan;
     if (botClient) {
@@ -814,16 +810,30 @@ async function forwardHistoryMessage(msg, targetChan) {
       }
     }
 
-    await chanToSend.send({
-      content: fullText.slice(0, 1990),
-      embeds: embeds.length > 0 ? embeds : undefined,
-      allowedMentions: { parse: ['everyone', 'roles', 'users'] }
-    });
+    try {
+      await chanToSend.send({
+        content: fullText.slice(0, 1990),
+        embeds: embeds.length > 0 ? embeds : undefined,
+        files: files.length > 0 ? files : undefined,
+        allowedMentions: { parse: ['everyone', 'roles', 'users'] }
+      });
+    } catch (sendErr) {
+      console.warn(`⚠️ Attachment re-upload error for #${targetChan.name}, sending as links:`, sendErr.message);
+      if (files.length > 0) {
+        fullText += '\n' + files.join('\n');
+      }
+      await chanToSend.send({
+        content: fullText.slice(0, 1990),
+        embeds: embeds.length > 0 ? embeds : undefined,
+        allowedMentions: { parse: ['everyone', 'roles', 'users'] }
+      });
+    }
 
   } catch (err) {
     console.error(`❌ Failed to forward past message in #${targetChan.name}:`, err.message);
   }
 }
+
 
 
 
