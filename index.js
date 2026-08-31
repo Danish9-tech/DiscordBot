@@ -257,7 +257,13 @@ function findTargetChannel(sourceChan, targetChannelsCollection) {
 async function autoCreateTargetChannel(sourceChan) {
   if (!targetGuild || !config.AUTO_CREATE_MISSING_CHANNELS) return null;
 
+  const sNameClean = sanitizeName(sourceChan.name);
+  if (sNameClean.startsWith('ticket-') || sNameClean.startsWith('closed-')) {
+    return null;
+  }
+
   try {
+
     let parentCategory = null;
 
     if (sourceChan.parent) {
@@ -539,10 +545,13 @@ if (selfClient) {
 
   selfClient.on('channelCreate', async (chan) => {
     if (chan.guild && sourceGuild && chan.guild.id === sourceGuild.id) {
+      const cClean = sanitizeName(chan.name);
+      if (cClean.startsWith('ticket-') || cClean.startsWith('closed-')) return;
       console.log(`🆕 New channel detected in Trading Mafia: #${chan.name}`);
       await autoCreateTargetChannel(chan);
     }
   });
+
 }
 
 
