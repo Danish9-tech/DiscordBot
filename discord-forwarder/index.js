@@ -479,12 +479,14 @@ botClient.once('clientReady', async () => {
 
   if (targetGuild) {
     console.log(`🎯 Target Server Ready: "${targetGuild.name}" (${targetGuild.id})`);
+    await cleanTicketChannels();
   }
 
   if (sourceGuild && targetGuild) {
     await syncChannelMappings();
   }
 });
+
 
 // Bot Client Message Listener (Responds to Admin Commands in Target Guild)
 botClient.on('messageCreate', async (msg) => {
@@ -579,10 +581,39 @@ async function handleAdminCommands(msg) {
     );
   }
 
+  if (msg.content === '!cleantickets') {
+    await msg.reply('🧹 Cleaning up old ticket channels in Bernard server...');
+    await cleanTicketChannels();
+    await msg.reply('✅ Old ticket channels cleaned up successfully!');
+  }
+
   if (msg.content === '!test') {
     await msg.reply('🧪 Forwarder connection test successful! Text replacement filter engine is active.');
   }
 }
+
+async function cleanTicketChannels() {
+  if (!targetGuild) return;
+  try {
+    const channels = await targetGuild.channels.fetch();
+    const ticketChans = channels.filter(c => c && (c.name.startsWith('ticket-') || c.name.startsWith('closed-')));
+    if (ticketChans.size > 0) {
+      console.log(`🧹 Found ${ticketChans.size} old ticket channels in Bernard server. Cleaning up...`);
+      for (const [id, chan] of ticketChans) {
+        try {
+          await chan.delete('Cleanup ticket channels');
+          console.log(`  🗑️ Deleted old ticket channel: #${chan.name}`);
+        } catch (e) {
+          console.error(`  ❌ Failed to delete #${chan.name}:`, e.message);
+        }
+      }
+      console.log(`✨ Ticket cleanup complete!\n`);
+    }
+  } catch (err) {
+    console.error('❌ Ticket channel cleanup error:', err.message);
+  }
+}
+
 
 // Login Both
 const cleanBotToken = (config.BOT_TOKEN || '').trim().replace(/^["']|["']$/g, '');
