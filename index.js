@@ -658,59 +658,75 @@ async function handleAdminCommands(msg) {
   }
 }
 
+let isCopyingHistory = false;
+
 async function copyCourseChannels(statusMsg) {
+  if (isCopyingHistory) {
+    if (statusMsg) await statusMsg.reply('⏳ History copy is already in progress. Please wait for it to complete!');
+    return;
+  }
+
   if (!targetGuild) {
     console.error('❌ Target Guild (Bernard Server) not ready.');
     if (statusMsg) await statusMsg.reply('❌ Target Guild (Bernard Server) not ready.');
     return;
   }
 
-  const targetCourseNames = [
-    'waqar-zaka-basic-course',
-    'waqar-zaka-advance-course',
-    'faizan-haroon-private-course',
-    'candle-and-chart-patterns',
-    'chuff-gang-lectures'
-  ];
+  isCopyingHistory = true;
 
-  let sGuild = sourceGuild;
-  if (!sGuild && selfClient) {
-    sGuild = Array.from(selfClient.guilds.cache.values()).find(g => 
-      g.name.toLowerCase().includes(config.SOURCE_GUILD_NAME.toLowerCase())
-    );
-  }
-
-  if (!sGuild) {
-    console.error(`❌ Source server "${config.SOURCE_GUILD_NAME}" not found.`);
-    if (statusMsg) await statusMsg.reply(`❌ Source server "${config.SOURCE_GUILD_NAME}" not found.`);
-    return;
-  }
-
-  let sourceChannels;
   try {
-    sourceChannels = await sGuild.channels.fetch();
-  } catch (e) {
-    sourceChannels = sGuild.channels.cache;
-  }
+    const targetCourseNames = [
+      'waqar-zaka-basic-course',
+      'waqar-zaka-advance-course',
+      'faizan-haroon-private-course',
+      'candle-and-chart-patterns',
+      'chuff-gang-lectures'
+    ];
 
-  for (const name of targetCourseNames) {
-    const cleanSearchName = sanitizeName(name);
-    const sourceChan = sourceChannels.find(c => c && sanitizeName(c.name) === cleanSearchName);
-    const targetChan = channelMap.get(sourceChan ? sourceChan.id : '') || 
-                       targetGuild.channels.cache.find(c => sanitizeName(c.name) === cleanSearchName);
-
-    if (!sourceChan || !targetChan) {
-      console.log(`⚠️ Skipping course channel "${name}": Source or Target channel not found.`);
-      if (statusMsg) await statusMsg.channel.send(`⚠️ Skipping course channel "${name}": Not found in source or target server.`);
-      continue;
+    let sGuild = sourceGuild;
+    if (!sGuild && selfClient) {
+      sGuild = Array.from(selfClient.guilds.cache.values()).find(g => 
+        g.name.toLowerCase().includes(config.SOURCE_GUILD_NAME.toLowerCase())
+      );
     }
 
-    if (statusMsg) await statusMsg.channel.send(`📥 Copying complete history for **#${sourceChan.name}**...`);
-    await fetchAndForwardAllHistory(sourceChan, targetChan);
-    if (statusMsg) await statusMsg.channel.send(`✅ Completed copying history for **#${sourceChan.name}**!`);
-  }
+    if (!sGuild) {
+      console.error(`❌ Source server "${config.SOURCE_GUILD_NAME}" not found.`);
+      if (statusMsg) await statusMsg.reply(`❌ Source server "${config.SOURCE_GUILD_NAME}" not found.`);
+      return;
+    }
 
-  if (statusMsg) await statusMsg.channel.send(`🎉 **All course channels have been fully copied into Bernard server!**`);
+    let sourceChannels;
+    try {
+      sourceChannels = await sGuild.channels.fetch();
+    } catch (e) {
+      sourceChannels = sGuild.channels.cache;
+    }
+
+    for (const name of targetCourseNames) {
+      const cleanSearchName = sanitizeName(name);
+      const sourceChan = sourceChannels.find(c => c && sanitizeName(c.name) === cleanSearchName);
+      const targetChan = channelMap.get(sourceChan ? sourceChan.id : '') || 
+                         targetGuild.channels.cache.find(c => sanitizeName(c.name) === cleanSearchName);
+
+      if (!sourceChan || !targetChan) {
+        console.log(`⚠️ Skipping course channel "${name}": Source or Target channel not found.`);
+        if (statusMsg) await statusMsg.channel.send(`⚠️ Skipping course channel "${name}": Not found in source or target server.`);
+        continue;
+      }
+
+      if (statusMsg) await statusMsg.channel.send(`📥 Copying complete history for **#${sourceChan.name}**...`);
+      await fetchAndForwardAllHistory(sourceChan, targetChan);
+      if (statusMsg) await statusMsg.channel.send(`✅ Completed copying history for **#${sourceChan.name}**!`);
+    }
+
+    if (statusMsg) await statusMsg.channel.send(`🎉 **All course channels have been fully copied into Bernard server!**`);
+  } catch (err) {
+    console.error(`❌ copyCourseChannels error:`, err.message);
+    if (statusMsg) await statusMsg.channel.send(`❌ Error copying courses: ${err.message}`);
+  } finally {
+    isCopyingHistory = false;
+  }
 }
 
 async function fetchAndForwardAllHistory(sourceChan, targetChan) {
@@ -759,17 +775,56 @@ async function fetchAndForwardAllHistory(sourceChan, targetChan) {
 
   for (let i = 0; i < allMessages.length; i++) {
     const msg = allMessages[i];
-    try {
-      await forwardMessage(msg, { skipWhatsApp: true });
-    } catch (err) {
-
-      console.error(`❌ Error forwarding past message in #${sourceChan.name}:`, err.message);
-    }
+    await forwardHistoryMessage(msg, targetChan);
     await new Promise(r => setTimeout(r, 1200));
   }
 
   console.log(`✨ Completed forwarding for #${sourceChan.name}!`);
 }
+
+async function forwardHistoryMessage(msg, targetChan) {
+  try {
+    let rawContent = msg.content || '';
+    let content = sanitizeText(rawContent);
+
+    // Collect attachment & sticker URLs
+    const fileUrls = [];
+    if (msg.attachments && msg.attachments.size > 0) {
+      msg.attachments.forEach(att => fileUrls.push(att.url));
+    }
+    if (msg.stickers && msg.stickers.size > 0) {
+      msg.stickers.forEach(s => fileUrls.push(s.url));
+    }
+
+    const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
+
+    const header = `📨 **[${msg.author ? msg.author.username : 'Course Note'}]** (${new Date(msg.createdTimestamp).toLocaleDateString()}):\n`;
+    let fullText = content ? `${header}${content}` : header;
+
+    if (fileUrls.length > 0) {
+      fullText += '\n' + fileUrls.join('\n');
+    }
+
+    let chanToSend = targetChan;
+    if (botClient) {
+      try {
+        chanToSend = await botClient.channels.fetch(targetChan.id);
+      } catch (e) {
+        chanToSend = targetChan;
+      }
+    }
+
+    await chanToSend.send({
+      content: fullText.slice(0, 1990),
+      embeds: embeds.length > 0 ? embeds : undefined,
+      allowedMentions: { parse: ['everyone', 'roles', 'users'] }
+    });
+
+  } catch (err) {
+    console.error(`❌ Failed to forward past message in #${targetChan.name}:`, err.message);
+  }
+}
+
 
 
 
