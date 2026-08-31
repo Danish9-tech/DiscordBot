@@ -521,7 +521,15 @@ async function forwardMessage(msg, options = {}) {
       } catch (waErr) {
         console.error(`❌ WhatsApp Forward Error:`, waErr.message);
       }
+    }
+
+  } catch (err) {
+    console.error(`❌ Forward Error:`, err.message);
+  }
+}
+
 // Bot Client Startup
+
 botClient.once('clientReady', async () => {
   console.log(`===========================================`);
   console.log(`✅ Bot Logged In: ${botClient.user.tag}`);
