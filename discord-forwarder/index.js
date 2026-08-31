@@ -659,7 +659,7 @@ async function handleAdminCommands(msg) {
   }
 
   if (msg.content === '!cleantickets') {
-    await msg.reply('🧹 Cleaning up old ticket channels in Bernard server...');
+    await msg.reply('🧹 Cleaning up old ticket channels in Trade Nura server...');
     await cleanTicketChannels();
     await msg.reply('✅ Old ticket channels cleaned up successfully!');
   }
@@ -669,10 +669,67 @@ async function handleAdminCommands(msg) {
     await copyCourseChannels(msg);
   }
 
+  if (msg.content === '!lockcategories' || msg.content === '!hidecategories') {
+    await msg.reply('🔒 Hiding private categories from normal users (@everyone)...');
+    await hideCategoriesFromEveryone(msg);
+  }
+
   if (msg.content === '!test') {
     await msg.reply('🧪 Forwarder connection test successful! Text replacement filter engine is active.');
   }
 }
+
+async function hideCategoriesFromEveryone(statusMsg) {
+  if (!targetGuild) {
+    if (statusMsg) await statusMsg.reply('❌ Target Guild not ready.');
+    return;
+  }
+
+  // Categories that should remain PUBLIC to normal users (@everyone)
+  const publicCategoryKeywords = [
+    'welcome',
+    'general',
+    'free signals',
+    'about premium',
+    'check before'
+  ];
+
+  try {
+    const channels = await targetGuild.channels.fetch();
+    const categories = channels.filter(c => c && c.type === 'GUILD_CATEGORY');
+
+    let lockedCount = 0;
+
+    for (const [catId, category] of categories) {
+      const catNameClean = category.name.toLowerCase();
+
+      // Check if this category is intended to be public
+      const isPublic = publicCategoryKeywords.some(kw => catNameClean.includes(kw));
+
+      if (!isPublic) {
+        try {
+          await category.permissionOverwrites.edit(targetGuild.roles.everyone.id, {
+            VIEW_CHANNEL: false
+          });
+          lockedCount++;
+          console.log(`🔒 Hidden category from @everyone: [${category.name}]`);
+        } catch (e) {
+          console.error(`❌ Failed to lock category [${category.name}]:`, e.message);
+        }
+      } else {
+        console.log(`🔓 Category remains public for @everyone: [${category.name}]`);
+      }
+    }
+
+    const replyMsg = `🔒 **Successfully hid ${lockedCount} private categories from normal users (@everyone)!**\nOnly Admins & Server Owner can now see these categories and their channels.`;
+    console.log(replyMsg);
+    if (statusMsg) await statusMsg.channel.send(replyMsg);
+  } catch (err) {
+    console.error(`❌ hideCategoriesFromEveryone error:`, err.message);
+    if (statusMsg) await statusMsg.channel.send(`❌ Error locking categories: ${err.message}`);
+  }
+}
+
 
 let isCopyingHistory = false;
 
