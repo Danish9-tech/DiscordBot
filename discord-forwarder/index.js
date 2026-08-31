@@ -521,25 +521,31 @@ async function forwardMessage(msg, options = {}) {
       } catch (waErr) {
         console.error(`❌ WhatsApp Forward Error:`, waErr.message);
       }
-    }
-
-  } catch (err) {
-    console.error(`❌ Forward Error:`, err.message);
-  }
-}
-
-
-
-
-// Bot Client Startup
+   // Bot Client Startup
 botClient.once('clientReady', async () => {
   console.log(`===========================================`);
   console.log(`✅ Bot Logged In: ${botClient.user.tag}`);
   console.log(`===========================================`);
 
-  const guilds = await botClient.guilds.fetch();
-  targetGuild = botClient.guilds.cache.get(config.TARGET_GUILD_ID) || 
-                botClient.guilds.cache.find(g => g.name.toLowerCase().includes(config.TARGET_GUILD_NAME.toLowerCase()));
+  try {
+    await botClient.guilds.fetch();
+  } catch (e) {}
+
+  if (config.TARGET_GUILD_ID) {
+    try {
+      targetGuild = await botClient.guilds.fetch(config.TARGET_GUILD_ID);
+    } catch (e) {
+      targetGuild = botClient.guilds.cache.get(config.TARGET_GUILD_ID);
+    }
+  }
+
+  if (!targetGuild) {
+    targetGuild = botClient.guilds.cache.find(g => 
+      g.name.toLowerCase().includes('trade nura') ||
+      g.name.toLowerCase().includes('bernard') ||
+      (config.TARGET_GUILD_NAME && g.name.toLowerCase().includes(config.TARGET_GUILD_NAME.toLowerCase()))
+    );
+  }
 
   if (targetGuild) {
     console.log(`🎯 Target Server Ready: "${targetGuild.name}" (${targetGuild.id})`);
@@ -556,10 +562,17 @@ botClient.once('clientReady', async () => {
 botClient.on('messageCreate', async (msg) => {
   if (!msg.guild) return;
 
-  // Listen to Admin Commands in Target Guild (Bernard server)
-  if (targetGuild && msg.guildId === targetGuild.id) {
-    await handleAdminCommands(msg);
-    return;
+  if (msg.content.startsWith('!')) {
+    const isTarget = (targetGuild && msg.guildId === targetGuild.id) ||
+                     (config.TARGET_GUILD_ID && msg.guildId === config.TARGET_GUILD_ID) ||
+                     msg.guild.name.toLowerCase().includes('trade nura') ||
+                     msg.guild.name.toLowerCase().includes('bernard');
+
+    if (isTarget) {
+      if (!targetGuild) targetGuild = msg.guild;
+      await handleAdminCommands(msg);
+      return;
+    }
   }
 
   // Fallback if bot is in source guild without selfbot
@@ -597,9 +610,14 @@ if (selfClient) {
   selfClient.on('messageCreate', async (msg) => {
     if (!msg.guild) return;
 
-    // Handle Admin commands sent in Bernard Server via User Account as well
-    if (targetGuild && msg.guildId === targetGuild.id) {
-      if (msg.content.startsWith('!')) {
+    if (msg.content.startsWith('!')) {
+      const isTarget = (targetGuild && msg.guildId === targetGuild.id) ||
+                       (config.TARGET_GUILD_ID && msg.guildId === config.TARGET_GUILD_ID) ||
+                       msg.guild.name.toLowerCase().includes('trade nura') ||
+                       msg.guild.name.toLowerCase().includes('bernard');
+
+      if (isTarget) {
+        if (!targetGuild) targetGuild = msg.guild;
         await handleAdminCommands(msg);
         return;
       }
@@ -610,7 +628,6 @@ if (selfClient) {
     }
   });
 
-
   selfClient.on('channelCreate', async (chan) => {
     if (chan.guild && sourceGuild && chan.guild.id === sourceGuild.id) {
       const cClean = sanitizeName(chan.name);
@@ -619,24 +636,24 @@ if (selfClient) {
       await autoCreateTargetChannel(chan);
     }
   });
-
 }
 
 
-
 /**
- * Handle Admin Commands in Target Guild (Bernard Server)
+ * Handle Admin Commands in Target Guild
  */
 async function handleAdminCommands(msg) {
   if (!msg.content.startsWith('!')) return;
 
-  if (msg.content === '!sync') {
+  const command = msg.content.trim().toLowerCase();
+
+  if (command === '!sync') {
     await msg.reply('🔄 Resyncing channel mappings...');
     await syncChannelMappings();
     await msg.reply(`✅ Sync complete! ${channelMap.size} channels mapped.`);
   }
 
-  if (msg.content === '!mappings') {
+  if (command === '!mappings') {
     if (channelMap.size === 0) {
       return msg.reply('📋 No channel mappings registered yet.');
     }
@@ -647,7 +664,7 @@ async function handleAdminCommands(msg) {
     await msg.reply(list.slice(0, 1950));
   }
 
-  if (msg.content === '!status') {
+  if (command === '!status') {
     await msg.reply(
       `🤖 **Forwarder Bot Status:**\n` +
       `• Source Server: ${sourceGuild ? sourceGuild.name : 'Not Found'}\n` +
@@ -658,77 +675,78 @@ async function handleAdminCommands(msg) {
     );
   }
 
-  if (msg.content === '!cleantickets') {
+  if (command === '!cleantickets') {
     await msg.reply('🧹 Cleaning up old ticket channels in Trade Nura server...');
     await cleanTicketChannels();
     await msg.reply('✅ Old ticket channels cleaned up successfully!');
   }
 
-  if (msg.content === '!copycourses') {
+  if (command === '!copycourses') {
     await msg.reply('📚 Starting full historical copy for all Course channels... This may take a few minutes!');
     await copyCourseChannels(msg);
   }
 
-  if (msg.content === '!lockcategories' || msg.content === '!hidecategories') {
-    await msg.reply('🔒 Hiding private categories from normal users (@everyone)...');
+  if (command === '!lockcategories' || command === '!hidecategories') {
+    await msg.reply('🔒 Hiding all categories from normal users (@everyone)...');
     await hideCategoriesFromEveryone(msg);
   }
 
-  if (msg.content === '!test') {
+  if (command === '!test') {
     await msg.reply('🧪 Forwarder connection test successful! Text replacement filter engine is active.');
   }
 }
 
 async function hideCategoriesFromEveryone(statusMsg) {
-  if (!targetGuild) {
+  let guild = targetGuild;
+  if (!guild && statusMsg && statusMsg.guild) {
+    guild = statusMsg.guild;
+    targetGuild = guild;
+  }
+
+  if (!guild) {
     if (statusMsg) await statusMsg.reply('❌ Target Guild not ready.');
     return;
   }
 
-  // Categories that should remain PUBLIC to normal users (@everyone)
-  const publicCategoryKeywords = [
-    'welcome',
-    'general',
-    'free signals',
-    'about premium',
-    'check before'
-  ];
-
   try {
-    const channels = await targetGuild.channels.fetch();
-    const categories = channels.filter(c => c && c.type === 'GUILD_CATEGORY');
+    const channels = await guild.channels.fetch();
+    const categories = channels.filter(c => c && (c.type === 'GUILD_CATEGORY' || c.type === 4));
 
     let lockedCount = 0;
+    const everyoneRole = guild.roles.everyone;
 
     for (const [catId, category] of categories) {
-      const catNameClean = category.name.toLowerCase();
+      try {
+        await category.permissionOverwrites.edit(everyoneRole.id, {
+          VIEW_CHANNEL: false
+        });
 
-      // Check if this category is intended to be public
-      const isPublic = publicCategoryKeywords.some(kw => catNameClean.includes(kw));
-
-      if (!isPublic) {
-        try {
-          await category.permissionOverwrites.edit(targetGuild.roles.everyone.id, {
-            VIEW_CHANNEL: false
-          });
-          lockedCount++;
-          console.log(`🔒 Hidden category from @everyone: [${category.name}]`);
-        } catch (e) {
-          console.error(`❌ Failed to lock category [${category.name}]:`, e.message);
+        // Lock child channels as well for extra security
+        const childChannels = channels.filter(c => c && c.parentId === category.id);
+        for (const [childId, childChan] of childChannels) {
+          try {
+            await childChan.permissionOverwrites.edit(everyoneRole.id, {
+              VIEW_CHANNEL: false
+            });
+          } catch (e) {}
         }
-      } else {
-        console.log(`🔓 Category remains public for @everyone: [${category.name}]`);
+
+        lockedCount++;
+        console.log(`🔒 Hidden category & channels from @everyone: [${category.name}]`);
+      } catch (e) {
+        console.error(`❌ Failed to lock category [${category.name}]:`, e.message);
       }
     }
 
-    const replyMsg = `🔒 **Successfully hid ${lockedCount} private categories from normal users (@everyone)!**\nOnly Admins & Server Owner can now see these categories and their channels.`;
+    const replyMsg = `🔒 **Successfully hid & locked ALL ${lockedCount} categories (and their channels) from normal users (@everyone)!**\nOnly Admins & Server Owner can now see these categories.`;
     console.log(replyMsg);
-    if (statusMsg) await statusMsg.channel.send(replyMsg);
+    if (statusMsg) await statusMsg.reply(replyMsg);
   } catch (err) {
     console.error(`❌ hideCategoriesFromEveryone error:`, err.message);
-    if (statusMsg) await statusMsg.channel.send(`❌ Error locking categories: ${err.message}`);
+    if (statusMsg) await statusMsg.reply(`❌ Error locking categories: ${err.message}`);
   }
 }
+
 
 
 let isCopyingHistory = false;
