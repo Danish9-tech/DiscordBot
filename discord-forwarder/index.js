@@ -757,50 +757,99 @@ async function hideCategoriesFromEveryone(statusMsg) {
     guild = statusMsg.guild;
     targetGuild = guild;
   }
+  if (!guild && botClient && botClient.guilds.cache.size > 0) {
+    guild = botClient.guilds.cache.find(g => 
+      g.name.toLowerCase().includes('trade nura') ||
+      g.name.toLowerCase().includes('bernard')
+    ) || botClient.guilds.cache.first();
+    targetGuild = guild;
+  }
 
   if (!guild) {
     if (statusMsg) await statusMsg.reply('❌ Target Guild not ready.');
     return;
   }
 
+  // Categories that MUST BE LOCKED from normal users (@everyone)
+  const lockedCategoryKeywords = [
+    'premium crypto',
+    'premium forex',
+    'elite vip',
+    'admin panel',
+    'developer zone',
+    'pending'
+  ];
+
   try {
     const channels = await guild.channels.fetch();
     const categories = channels.filter(c => c && (c.type === 'GUILD_CATEGORY' || c.type === 4));
 
     let lockedCount = 0;
+    let unlockedCount = 0;
     const everyoneRole = guild.roles.everyone;
 
     for (const [catId, category] of categories) {
-      try {
-        await category.permissionOverwrites.edit(everyoneRole.id, {
-          VIEW_CHANNEL: false
-        });
+      const catNameClean = category.name.toLowerCase();
 
-        // Lock child channels as well for extra security
-        const childChannels = channels.filter(c => c && c.parentId === category.id);
-        for (const [childId, childChan] of childChannels) {
-          try {
-            await childChan.permissionOverwrites.edit(everyoneRole.id, {
-              VIEW_CHANNEL: false
-            });
-          } catch (e) {}
+      // Check if this category should be locked
+      const shouldLock = lockedCategoryKeywords.some(kw => catNameClean.includes(kw));
+
+      if (shouldLock) {
+        try {
+          await category.permissionOverwrites.edit(everyoneRole.id, {
+            VIEW_CHANNEL: false
+          });
+
+          // Also lock all channels inside this category
+          const childChannels = channels.filter(c => c && c.parentId === category.id);
+          for (const [childId, childChan] of childChannels) {
+            try {
+              await childChan.permissionOverwrites.edit(everyoneRole.id, {
+                VIEW_CHANNEL: false
+              });
+            } catch (e) {}
+          }
+
+          lockedCount++;
+          console.log(`🔒 Hidden Category & Channels from @everyone: [${category.name}]`);
+        } catch (e) {
+          console.error(`❌ Failed to lock category [${category.name}]:`, e.message);
         }
+      } else {
+        try {
+          // Make public categories accessible to everyone
+          await category.permissionOverwrites.edit(everyoneRole.id, {
+            VIEW_CHANNEL: true
+          });
 
-        lockedCount++;
-        console.log(`🔒 Hidden category & channels from @everyone: [${category.name}]`);
-      } catch (e) {
-        console.error(`❌ Failed to lock category [${category.name}]:`, e.message);
+          const childChannels = channels.filter(c => c && c.parentId === category.id);
+          for (const [childId, childChan] of childChannels) {
+            try {
+              await childChan.permissionOverwrites.edit(everyoneRole.id, {
+                VIEW_CHANNEL: true
+              });
+            } catch (e) {}
+          }
+
+          unlockedCount++;
+          console.log(`🔓 Unlocked Category & Channels for @everyone: [${category.name}]`);
+        } catch (e) {
+          console.error(`❌ Failed to unlock category [${category.name}]:`, e.message);
+        }
       }
     }
 
-    const replyMsg = `🔒 **Successfully hid & locked ALL ${lockedCount} categories (and their channels) from normal users (@everyone)!**\nOnly Admins & Server Owner can now see these categories.`;
+    const replyMsg = `🔒 **Permissions Configured Perfectly!**\n` +
+                     `• **Locked (${lockedCount} categories)**: Premium Crypto & Premium Forex (Hidden for normal users)\n` +
+                     `• **Unlocked (${unlockedCount} categories)**: General, Free Community, Courses & About Premium (Visible to everyone)`;
     console.log(replyMsg);
     if (statusMsg) await statusMsg.reply(replyMsg);
   } catch (err) {
     console.error(`❌ hideCategoriesFromEveryone error:`, err.message);
-    if (statusMsg) await statusMsg.reply(`❌ Error locking categories: ${err.message}`);
+    if (statusMsg) await statusMsg.reply(`❌ Error setting category permissions: ${err.message}`);
   }
 }
+
 
 
 
