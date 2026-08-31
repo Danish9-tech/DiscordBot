@@ -521,7 +521,7 @@ async function forwardMessage(msg, options = {}) {
       } catch (waErr) {
         console.error(`❌ WhatsApp Forward Error:`, waErr.message);
       }
-   // Bot Client Startup
+// Bot Client Startup
 botClient.once('clientReady', async () => {
   console.log(`===========================================`);
   console.log(`✅ Bot Logged In: ${botClient.user.tag}`);
@@ -539,17 +539,18 @@ botClient.once('clientReady', async () => {
     }
   }
 
-  if (!targetGuild) {
+  if (!targetGuild && botClient.guilds.cache.size > 0) {
     targetGuild = botClient.guilds.cache.find(g => 
       g.name.toLowerCase().includes('trade nura') ||
       g.name.toLowerCase().includes('bernard') ||
       (config.TARGET_GUILD_NAME && g.name.toLowerCase().includes(config.TARGET_GUILD_NAME.toLowerCase()))
-    );
+    ) || botClient.guilds.cache.first();
   }
 
   if (targetGuild) {
     console.log(`🎯 Target Server Ready: "${targetGuild.name}" (${targetGuild.id})`);
     await cleanTicketChannels();
+    await hideCategoriesFromEveryone(); // Auto-lock on startup!
   }
 
   if (sourceGuild && targetGuild) {
@@ -558,21 +559,15 @@ botClient.once('clientReady', async () => {
 });
 
 
-// Bot Client Message Listener (Responds to Admin Commands in Target Guild)
+// Bot Client Message Listener (Responds to Admin Commands Universally)
 botClient.on('messageCreate', async (msg) => {
   if (!msg.guild) return;
 
   if (msg.content.startsWith('!')) {
-    const isTarget = (targetGuild && msg.guildId === targetGuild.id) ||
-                     (config.TARGET_GUILD_ID && msg.guildId === config.TARGET_GUILD_ID) ||
-                     msg.guild.name.toLowerCase().includes('trade nura') ||
-                     msg.guild.name.toLowerCase().includes('bernard');
-
-    if (isTarget) {
-      if (!targetGuild) targetGuild = msg.guild;
-      await handleAdminCommands(msg);
-      return;
-    }
+    console.log(`💬 Admin Command Received in "${msg.guild.name}": ${msg.content}`);
+    if (!targetGuild) targetGuild = msg.guild;
+    await handleAdminCommands(msg);
+    return;
   }
 
   // Fallback if bot is in source guild without selfbot
@@ -611,16 +606,9 @@ if (selfClient) {
     if (!msg.guild) return;
 
     if (msg.content.startsWith('!')) {
-      const isTarget = (targetGuild && msg.guildId === targetGuild.id) ||
-                       (config.TARGET_GUILD_ID && msg.guildId === config.TARGET_GUILD_ID) ||
-                       msg.guild.name.toLowerCase().includes('trade nura') ||
-                       msg.guild.name.toLowerCase().includes('bernard');
-
-      if (isTarget) {
-        if (!targetGuild) targetGuild = msg.guild;
-        await handleAdminCommands(msg);
-        return;
-      }
+      if (!targetGuild) targetGuild = msg.guild;
+      await handleAdminCommands(msg);
+      return;
     }
 
     if (sourceGuild && msg.guildId === sourceGuild.id) {
@@ -637,6 +625,7 @@ if (selfClient) {
     }
   });
 }
+
 
 
 /**
