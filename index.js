@@ -618,10 +618,99 @@ async function handleAdminCommands(msg) {
     await msg.reply('✅ Old ticket channels cleaned up successfully!');
   }
 
+  if (msg.content === '!copycourses') {
+    await msg.reply('📚 Starting full historical copy for all Course channels... This may take a few minutes!');
+    await copyCourseChannels(msg);
+  }
+
   if (msg.content === '!test') {
     await msg.reply('🧪 Forwarder connection test successful! Text replacement filter engine is active.');
   }
 }
+
+async function copyCourseChannels(statusMsg) {
+  if (!sourceGuild || !targetGuild) return;
+
+  const targetCourseNames = [
+    'waqar-zaka-basic-course',
+    'waqar-zaka-advance-course',
+    'faizan-haroon-private-course',
+    'candle-and-chart-patterns',
+    'chuff-gang-lectures'
+  ];
+
+  let sourceChannels;
+  try {
+    sourceChannels = await sourceGuild.channels.fetch();
+  } catch (e) {
+    sourceChannels = sourceGuild.channels.cache;
+  }
+
+  for (const name of targetCourseNames) {
+    const cleanSearchName = sanitizeName(name);
+    const sourceChan = sourceChannels.find(c => c && sanitizeName(c.name) === cleanSearchName);
+    const targetChan = channelMap.get(sourceChan ? sourceChan.id : '');
+
+    if (!sourceChan || !targetChan) {
+      console.log(`⚠️ Skipping course channel "${name}": Source or Target channel not found.`);
+      continue;
+    }
+
+    if (statusMsg) await statusMsg.channel.send(`📥 Copying complete history for **#${sourceChan.name}**...`);
+    await fetchAndForwardAllHistory(sourceChan, targetChan);
+    if (statusMsg) await statusMsg.channel.send(`✅ Completed **#${sourceChan.name}**!`);
+  }
+
+  if (statusMsg) await statusMsg.channel.send(`🎉 **All course channels have been fully copied into Bernard server!**`);
+}
+
+async function fetchAndForwardAllHistory(sourceChan, targetChan) {
+  let lastId = null;
+  let allMessages = [];
+  console.log(`📥 Fetching full history from Trading Mafia #${sourceChan.name}...`);
+
+  while (true) {
+    const options = { limit: 100 };
+    if (lastId) options.before = lastId;
+
+    let fetched;
+    try {
+      fetched = await sourceChan.messages.fetch(options);
+    } catch (err) {
+      console.error(`❌ Fetch history error for #${sourceChan.name}:`, err.message);
+      break;
+    }
+
+    if (!fetched || fetched.size === 0) break;
+
+    const msgList = Array.from(fetched.values());
+    allMessages.push(...msgList);
+    lastId = msgList[msgList.length - 1].id;
+
+    console.log(`  Fetched ${allMessages.length} messages so far from #${sourceChan.name}...`);
+
+    if (fetched.size < 100) break;
+    await new Promise(r => setTimeout(r, 800));
+  }
+
+  // Sort messages chronologically (oldest first)
+  allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  console.log(`🚀 Forwarding ${allMessages.length} past messages to #${targetChan.name} in Bernard server...`);
+
+  for (let i = 0; i < allMessages.length; i++) {
+    const msg = allMessages[i];
+    try {
+      await forwardMessage(msg);
+    } catch (err) {
+      console.error(`❌ Error forwarding past message in #${sourceChan.name}:`, err.message);
+    }
+    await new Promise(r => setTimeout(r, 1200));
+  }
+
+  console.log(`✨ Completed forwarding for #${sourceChan.name}!`);
+}
+
 
 async function cleanTicketChannels() {
   if (!targetGuild) return;
