@@ -132,11 +132,15 @@ function sanitizeText(text) {
 
   let sanitized = text;
 
-  // 1. Strict Brand Replacements (Trading Mafia -> Bernard Server)
-  sanitized = sanitized.replace(/realtradingmafia/gi, 'Bernard Server');
-  sanitized = sanitized.replace(/tradingmafia/gi, 'Bernard Server');
-  sanitized = sanitized.replace(/trading mafia/gi, 'Bernard Server');
-  sanitized = sanitized.replace(/@Trading Mafia/gi, '@Bernard Support');
+  // 1. Strict Brand Replacements (Trading Mafia / Bernard -> Trade Nura)
+  sanitized = sanitized.replace(/realtradingmafia/gi, 'Trade Nura');
+  sanitized = sanitized.replace(/tradingmafia/gi, 'Trade Nura');
+  sanitized = sanitized.replace(/trading mafia/gi, 'Trade Nura');
+  sanitized = sanitized.replace(/Trading Mafia/gi, 'Trade Nura');
+  sanitized = sanitized.replace(/@Trading Mafia/gi, '@Trade Nura Support');
+  sanitized = sanitized.replace(/Bernard Server/gi, 'Trade Nura');
+  sanitized = sanitized.replace(/Bernard Community/gi, 'Trade Nura');
+  sanitized = sanitized.replace(/Bernard/gi, 'Trade Nura');
 
   // 2. Custom Text Replacements from Config
   if (config.REPLACEMENTS && typeof config.REPLACEMENTS === 'object') {
@@ -156,6 +160,7 @@ function sanitizeText(text) {
 
   return sanitized;
 }
+
 
 
 /**
@@ -462,7 +467,8 @@ async function forwardMessage(msg, options = {}) {
 
     if (!sentSuccess) {
       try {
-        const rawAuthor = msg.author ? msg.author.username : 'Bernard Server';
+        const rawAuthor = msg.author ? msg.author.username : 'Trade Nura';
+
         const cleanAuthor = sanitizeText(rawAuthor);
         const header = `📨 **[#${targetChannel.name}]** **${cleanAuthor}**:\n`;
         const fullText = content ? `${header}${content}` : header;
@@ -730,7 +736,8 @@ async function copyCourseChannels(statusMsg) {
       if (statusMsg) await statusMsg.channel.send(`✅ Completed copying history for **#${sourceChan.name}**!`);
     }
 
-    if (statusMsg) await statusMsg.channel.send(`🎉 **All course channels have been fully copied into Bernard server!**`);
+    if (statusMsg) await statusMsg.channel.send(`🎉 **All course channels have been fully copied into Trade Nura!**`);
+
   } catch (err) {
     console.error(`❌ copyCourseChannels error:`, err.message);
     if (statusMsg) await statusMsg.channel.send(`❌ Error copying courses: ${err.message}`);
@@ -808,10 +815,11 @@ async function forwardHistoryMessage(msg, targetChan) {
 
     const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
 
-    const rawAuthor = msg.author ? msg.author.username : 'Bernard Server';
+    const rawAuthor = msg.author ? msg.author.username : 'Trade Nura';
     const cleanAuthor = sanitizeText(rawAuthor);
     const header = `📨 **[${cleanAuthor}]** (${new Date(msg.createdTimestamp).toLocaleDateString()}):\n`;
     let fullText = content ? `${header}${content}` : header;
+
 
 
     let chanToSend = targetChan;
