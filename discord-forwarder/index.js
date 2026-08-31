@@ -775,10 +775,16 @@ async function hideCategoriesFromEveryone(statusMsg) {
     'premium crypto',
     'premium forex',
     'elite vip',
+    'vip',
     'admin panel',
+    'admin',
     'developer zone',
-    'pending'
+    'developer',
+    'pending',
+    'relay',
+    'partners'
   ];
+
 
   try {
     const channels = await guild.channels.fetch();
