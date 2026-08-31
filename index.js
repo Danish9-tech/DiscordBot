@@ -350,9 +350,9 @@ async function getWebhook(targetChannel) {
   }
 }
 
-async function forwardMessage(msg) {
+async function forwardMessage(msg, options = {}) {
   // Prevent loops from Bot itself
-  if (msg.author.id === botClient.user.id) return;
+  if (botClient.user && msg.author.id === botClient.user.id) return;
 
   // Never forward messages sent within Target Guild (Bernard Server)
   if (targetGuild && msg.guildId === targetGuild.id) return;
@@ -372,12 +372,11 @@ async function forwardMessage(msg) {
 
     let targetChannel = channelMap.get(sourceChannel.id);
 
-
     if (!targetChannel && targetGuild) {
       let targetChannels;
       try {
         targetChannels = await targetGuild.channels.fetch();
-      } catch(e) {
+      } catch (e) {
         targetChannels = targetGuild.channels.cache;
       }
       const textTargets = targetChannels.filter(c => c && (c.type === 'GUILD_TEXT' || c.isTextBased?.()) && !c.isThread?.());
@@ -390,7 +389,10 @@ async function forwardMessage(msg) {
       }
     }
 
-    if (!targetChannel) return;
+    if (!targetChannel) {
+      console.log(`⚠️ No target channel found for #${sourceChannel.name}`);
+      return;
+    }
 
     let rawContent = msg.content || '';
 
@@ -419,8 +421,70 @@ async function forwardMessage(msg) {
       msg.stickers.forEach(s => files.push(s.url));
     }
 
-    // 📱 Forward to WhatsApp Group if enabled (Independent of Discord Target Channel)
-    if (config.ENABLE_WHATSAPP && waReady && waSock && config.WHATSAPP_GROUP_ID) {
+    if (config.ADD_PING_TAG && typeof config.ADD_PING_TAG === 'string' && config.ADD_PING_TAG.trim() && !options.skipWhatsApp) {
+      const pingStr = config.ADD_PING_TAG.trim();
+      if (!content.includes(pingStr)) {
+        content = content ? `${content}\n${pingStr}` : pingStr;
+      }
+    }
+
+    // Handle Embeds with Filtering
+    const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
+
+    // 1. FIRST: Forward to Discord Target Channel (Bernard Server)
+    let sentSuccess = false;
+
+    if (config.USE_WEBHOOKS) {
+      const webhook = await getWebhook(targetChannel);
+      if (webhook) {
+        try {
+          await webhook.send({
+            content: content || undefined,
+            username: msg.author.displayName || msg.author.username,
+            avatarURL: msg.author.displayAvatarURL ? msg.author.displayAvatarURL({ dynamic: true }) : msg.author.avatarURL,
+            embeds: embeds.length > 0 ? embeds : undefined,
+            files: files.length > 0 ? files : undefined,
+            allowedMentions: { parse: ['everyone', 'roles', 'users'] }
+          });
+          sentSuccess = true;
+        } catch (whErr) {
+          console.error(`❌ Webhook Send Error for #${targetChannel.name}:`, whErr.message);
+        }
+      }
+    }
+
+    if (!sentSuccess) {
+      try {
+        const header = `📨 **[#${sourceChannel.name}]** **${msg.author.username}**:\n`;
+        const fullText = content ? `${header}${content}` : header;
+
+        let chanToSend = targetChannel;
+        if (botClient) {
+          try {
+            chanToSend = await botClient.channels.fetch(targetChannel.id);
+          } catch (e) {
+            chanToSend = targetChannel;
+          }
+        }
+
+        await chanToSend.send({
+          content: fullText,
+          embeds: embeds.length > 0 ? embeds : undefined,
+          files: files.length > 0 ? files : undefined,
+          allowedMentions: { parse: ['everyone', 'roles', 'users'] }
+        });
+        sentSuccess = true;
+      } catch (sendErr) {
+        console.error(`❌ Direct Send Error for #${targetChannel.name}:`, sendErr.message);
+      }
+    }
+
+    if (sentSuccess) {
+      console.log(`🚀 [Forwarded & Filtered] [#${sourceChannel.name}] ➡️ [#${targetChannel.name}] (${msg.author.username})`);
+    }
+
+    // 2. SECOND: Forward to WhatsApp Group ONLY if NOT skipped and ENABLED
+    if (!options.skipWhatsApp && config.ENABLE_WHATSAPP && waReady && waSock && config.WHATSAPP_GROUP_ID) {
       try {
         const waHeader = `📌 *[#${sourceChannel.name.toUpperCase()}]*\n\n`;
         let waText = content ? `${waHeader}${content}` : waHeader;
@@ -437,61 +501,17 @@ async function forwardMessage(msg) {
         } else {
           await waSock.sendMessage(config.WHATSAPP_GROUP_ID, { text: waText });
         }
-        console.log(`📱 [WhatsApp Forwarded] [#${sourceChannel.name}] ➡️ WhatsApp Group (${msg.author.username})`);
+        console.log(`📱 [WhatsApp Forwarded] [#${sourceChannel.name}] ➡️ WhatsApp Group`);
       } catch (waErr) {
         console.error(`❌ WhatsApp Forward Error:`, waErr.message);
       }
     }
 
-    if (config.ADD_PING_TAG && typeof config.ADD_PING_TAG === 'string' && config.ADD_PING_TAG.trim()) {
-      const pingStr = config.ADD_PING_TAG.trim();
-      if (!content.includes(pingStr)) {
-        content = content ? `${content}\n${pingStr}` : pingStr;
-      }
-    }
-
-
-    // Handle Embeds with Filtering
-    const embeds = msg.embeds ? msg.embeds.map(e => sanitizeEmbed(e.toJSON ? e.toJSON() : e)) : [];
-
-    let sentSuccess = false;
-
-    if (config.USE_WEBHOOKS) {
-      const webhook = await getWebhook(targetChannel);
-      if (webhook) {
-        try {
-          await webhook.send({
-            content: content || undefined,
-            username: msg.author.displayName || msg.author.username,
-            avatarURL: msg.author.displayAvatarURL ? msg.author.displayAvatarURL({ dynamic: true }) : msg.author.avatarURL,
-            embeds: embeds.length > 0 ? embeds : undefined,
-            files: files.length > 0 ? files : undefined,
-            allowedMentions: { parse: ['everyone', 'roles', 'users'] }
-          });
-          sentSuccess = true;
-        } catch (whErr) {}
-      }
-    }
-
-    if (!sentSuccess) {
-      const header = `📨 **[#${sourceChannel.name}]** **${msg.author.username}**:\n`;
-      const fullText = content ? `${header}${content}` : header;
-
-      await targetChannel.send({
-        content: fullText,
-        embeds: embeds.length > 0 ? embeds : undefined,
-        files: files.length > 0 ? files : undefined,
-        allowedMentions: { parse: ['everyone', 'roles', 'users'] }
-      });
-    }
-
-
-    console.log(`🚀 [Forwarded & Filtered] [#${sourceChannel.name}] ➡️ [#${targetChannel.name}] (${msg.author.username})`);
-
   } catch (err) {
     console.error(`❌ Forward Error:`, err.message);
   }
 }
+
 
 
 
@@ -740,8 +760,9 @@ async function fetchAndForwardAllHistory(sourceChan, targetChan) {
   for (let i = 0; i < allMessages.length; i++) {
     const msg = allMessages[i];
     try {
-      await forwardMessage(msg);
+      await forwardMessage(msg, { skipWhatsApp: true });
     } catch (err) {
+
       console.error(`❌ Error forwarding past message in #${sourceChan.name}:`, err.message);
     }
     await new Promise(r => setTimeout(r, 1200));
